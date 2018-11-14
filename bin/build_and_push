@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+# Builds docker images for django app and nginx, and pushes them to AWS ECR
+#
+# Usage: ./build_and_push_images_ecr.sh <APP_TAG>
+#
+# Arguments
+# - APP_TAG: git tag of app to use in build, and tag to use after image. defaults to latest commit hash if not specified
+#
+# Assumes:
+# - Image repos already created
+#
+# Required env variables (set these in a .env file):
+# - APP_IMAGE_REPO: app image uri
+# - NGINX_IMAGE_REPO: nginx image uri
+# - APP_CONTEXT: app build context
+# - NGINX_CONTEXT: nginx build context
+# - APP_DOCKERFILE: app dockerfile
+# - NGINX_DOCKERFILE: nginx dockerfile
+#
+
+# exports values in .env file to environment variables
+export $(cat .env | xargs)
+
+# Use git tag if provided as first positional argument
+APP_TAG=$1
+
+# latest commit hash on app repo
+LATEST_COMMIT=$(git -C ${APP_CONTEXT} rev-parse HEAD)
+
+# tag to attach to app image
+TAG=${APP_TAG:-${LATEST_COMMIT}}
+
+# If app tag specified, check out that version of the app
+if [ ! -z ${APP_TAG} ]; then
+    echo "Checking out tag: ${APP_TAG}"
+    pushd ${APP_CONTEXT}
+    APP_STASH_FLAG=true
+    APP_CURRENT_BRANCH=$(git branch | grep \* | cut -d ' ' -f2)
+    git stash
+    git checkout tags/${APP_TAG}
+    popd
+fi
+
+# Login to AWS ECR if ECR_REGISTRY variable is set; requires AWS_DEFAULT_REGION to also be set
+if [[ ! -z ${ECR_REGISTRY} ]]; then
+    echo "Logging into to AWS ECR"
+    eval $(aws ecr get-login --region ${AWS_DEFAULT_REGION} --no-include-email)
+fi
+
+## Build images: docker build -f <Dockerfile> <tag> <context>
+
+# Builds base app image
+docker build -f ${APP_DOCKERFILE} -t ${APP_IMAGE}:${TAG} ${APP_CONTEXT}
+# Adds custom settings to base app image (replaces the base image)
+echo "Using build arg: BASE_IMAGE=${APP_IMAGE}:${TAG}"
+docker build -f ${APP_SETTINGS_DOCKERFILE} -t ${APP_IMAGE}:${TAG} --build-arg BASE_IMAGE=${APP_IMAGE}:${TAG} .
+# Builds nginx image (uses same tag as app image)
+docker build -f ${NGINX_DOCKERFILE} -t ${NGINX_IMAGE}:${TAG} ${NGINX_CONTEXT} --build-arg APP_IMAGE=${APP_IMAGE}:${TAG}
+
+# Push to ECR
+docker push ${APP_IMAGE}:${TAG}
+docker push ${NGINX_IMAGE}:${TAG}
+
+# Revert app to previous branch and state
+if [ ${APP_STASH_FLAG} ]; then
+    echo "Applying stash"
+    pushd ${APP_CONTEXT}
+    git checkout ${APP_CURRENT_BRANCH}
+    git stash apply
+    popd
+fi

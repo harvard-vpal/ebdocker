@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+# prints the current git commit
+
+source .env
+
+echo $(git -C ${APP_CONTEXT} rev-parse HEAD)

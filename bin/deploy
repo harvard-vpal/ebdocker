@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Prepare resources needed for eb deploy, then deploy to eb environment specified in argument
+#
+# Usage: bin/deploy dev 2.4.3
+#
+# env vars:
+# - EB_ENV_PREFIX: base elastic beanstalk environment label e.g. "bridge-"
+
+source .env
+
+# get eb env label from positional argument, e.g. "dev", "stage", "prod"
+#EB_ENV_SUFFIX=$1
+# get eb env name from positional argument, e.g. "bridge-dev"
+EB_ENV=$1
+# get tag name from positional argument
+APP_TAG=${2:-$(${EBDOCKER_CONTEXT}/bin/head_commit)}
+
+#EB_ENV=${EB_ENV_PREFIX}${EB_ENV_SUFFIX}
+
+echo "Deploying app ${APP_TAG} to ${EB_ENV}"
+
+# generate temporary, env-specific Dockerrun.aws.json
+# eb multicontainer docker requires Dockerrun.aws.json file in project directory
+# (name not configurable to my knowledge, so a staging file is created and moved/renamed before deploy)
+TMP_DOCKERRUN_FILE=dockerrun/Dockerrun.aws.${EB_ENV}.json
+python ${EBDOCKER_CONTEXT}/scripts/generate_dockerrun_aws_json.py \
+    --filename ${TMP_DOCKERRUN_FILE} \
+    --tag ${APP_TAG} \
+    --template ${DOCKERRUN_TEMPLATE}
+
+# copy to Dockerrun.aws.json
+cp ${TMP_DOCKERRUN_FILE} Dockerrun.aws.json
+
+# eb deploy
+eb deploy ${EB_ENV}
+
+# clean up Dockerrun.aws.json file
+rm Dockerrun.aws.json
