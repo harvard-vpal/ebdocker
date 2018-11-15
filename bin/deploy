@@ -5,18 +5,14 @@
 # Usage: bin/deploy dev 2.4.3
 #
 # env vars:
-# - EB_ENV_PREFIX: base elastic beanstalk environment label e.g. "bridge-"
+# - EBDOCKER_CONTEXT: root directory of local ebdocker utils repo
 
 source .env
 
-# get eb env label from positional argument, e.g. "dev", "stage", "prod"
-#EB_ENV_SUFFIX=$1
 # get eb env name from positional argument, e.g. "bridge-dev"
 EB_ENV=$1
 # get tag name from positional argument
 APP_TAG=${2:-$(${EBDOCKER_CONTEXT}/bin/head_commit)}
-
-#EB_ENV=${EB_ENV_PREFIX}${EB_ENV_SUFFIX}
 
 echo "Deploying app ${APP_TAG} to ${EB_ENV}"
 
